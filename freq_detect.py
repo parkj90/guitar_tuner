@@ -1,49 +1,50 @@
 import numpy
 import pylab
-import queue
 import scipy.signal
 import sounddevice
 
 
 SAMPLERATE = 44100
 FFTSIZE = 32768
-FRES = SAMPLERATE / FFTSIZE
-OVERLAP = int(SAMPLERATE / 10)
 MAG_THRESH = 70
 
 
-class Freq_Detector:
+class FreqDetector:
+    # frequency resolution and overlap size
+    fres = SAMPLERATE / FFTSIZE
+    overlap = int(SAMPLERATE / 10)
+
     def __init__(self):
-        self.main_array = numpy.zeros(FFTSIZE)
+        self.fftbuffer = numpy.zeros(FFTSIZE)
         self.samplerate = SAMPLERATE
         self.framecount = 0
         self.window = scipy.signal.get_window('blackman', FFTSIZE)
         self.screencap = True
 
     def add_samples(self, indata, frames):
-        if frames > OVERLAP:
-            for i in range(int(frames / OVERLAP)):
-                self.main_array = numpy.append(self.main_array, indata[:OVERLAP])[OVERLAP:]
-                indata = indata[OVERLAP:]
+        if frames > self.overlap:
+            for i in range(int(frames / self.overlap)):
+                self.fftbuffer = numpy.append(self.fftbuffer, indata[:self.overlap])[self.overlap:]
+                indata = indata[self.overlap:]
                 self.find_note()
-        frames = frames % OVERLAP
-        if self.framecount + frames >= OVERLAP:
-            cutoff_index = OVERLAP - self.framecount
-            self.main_array = numpy.append(self.main_array, indata[:cutoff_index])[cutoff_index:]
-            temp_array = indata[cutoff_index:]
+        frames = frames % self.overlap
+        if self.framecount + frames >= self.overlap:
+            cutoff_index = self.overlap - self.framecount
+            self.fftbuffer = numpy.append(self.fftbuffer, indata[:cutoff_index])[cutoff_index:]
+            temp = indata[cutoff_index:]
             self.find_note()
-            self.main_array = numpy.append(self.main_array, temp_array)[len(temp_array):]
-            self.framecount = len(temp_array)
+            self.fftbuffer = numpy.append(self.fftbuffer, temp)[len(temp):]
+            self.framecount = len(temp)
         else:
-            self.main_array = numpy.append(self.main_array, indata)[frames:]
+            self.fftbuffer = numpy.append(self.fftbuffer, indata)[frames:]
             self.framecount += frames
 
     def find_note(self):
-        x = self.main_array * self.window
+        x = self.fftbuffer * self.window
         X = numpy.fft.fft(x)
         mag_spectrum = abs(X)[:int(len(X) / 2)]
-        freq = mag_spectrum.argmax() * FRES
-        if (mag_spectrum.argmax() < MAG_THRESH):
+        freq = mag_spectrum.argmax() * self.fres
+        if (mag_spectrum[mag_spectrum.argmax()] < MAG_THRESH):
             print('N/A')
         else:
             print(mag_spectrum.argmax(), freq)
@@ -53,15 +54,18 @@ class Freq_Detector:
             pylab.savefig('f0.png')
             self.screencap = False
 
+    def callback(self, indata, frames, time, status):
+        if status:
+            print(status)
+        if indata.any():
+            self.add_samples(indata, frames)
 
-def callback(indata, frames, time, status):
-    if status:
-        print(status)
-    if indata.any():
-        fd.add_samples(indata, frames)
+    def init_stream(self):
+        with sounddevice.InputStream(channels=1, dtype='float32', callback=self.callback):
+            input()
 
 
-sounddevice.default.samplerate = SAMPLERATE
-fd = Freq_Detector()
-with sounddevice.InputStream(channels=1, dtype='float32', callback=callback):
-    input()
+if __name__ == '__main__':
+    sounddevice.default.samplerate = SAMPLERATE
+    fd = FreqDetector()
+    fd.init_stream()
