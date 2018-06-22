@@ -1,18 +1,31 @@
-import freq_detect
 import wx
 
 
-class TunerGUI(wx.Frame):
+class TunerGUI:
+    def __init__(self, q):
+        self.q = q
+        self.app = wx.App()
+        self.f = TunerFrame(None)
+        self.app.MainLoop()
+
+    # callback function for thread
+    def queue_check(q):
+        while True:
+            i = q.get()
+            print(i)
+
+
+class TunerFrame(wx.Frame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs, size=(600, 300))
-        self.InitGUI()
-
-    def InitGUI(self):
         self.Show()
 
 
-if __name__ == '__main__':
-    app = wx.App()
-    guitar_tuner = TunerGUI(None, title='Guitar Tuner')
-    fd = freq_detect.FreqDetector()
-    fd.init_stream()
+# ERASE ME DEBUG TOOL
+def check_queue(q):
+    while True:
+        i = q.get()
+        if i == 'end_stream':
+            break
+        print(i)
+        q.task_done()
