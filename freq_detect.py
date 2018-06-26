@@ -6,7 +6,9 @@ import sounddevice
 
 SAMPLERATE = 44100
 FFTSIZE = 32768
-MAG_THRESH = 26
+MAGTHRESH = 26    # dB
+FREQTHRESH = 60   # Hz
+SEARCHRANGE = 10  # must be smaller than FREQTHRESH
 EPS = numpy.finfo(float).eps
 
 
@@ -14,8 +16,7 @@ class FreqDetector:
     # frequency resolution and OVERLAP size
     FRES = SAMPLERATE / FFTSIZE
     OVERLAP = SAMPLERATE // 10
-    BINSEARCHBUFFER = 20
-    HZSEARCHBUFFER = 20
+    LOCALMAXTHRESH = 24  # units: dB
 
     def __init__(self, queue):
         self.inbuffer = numpy.array([])
@@ -42,17 +43,17 @@ class FreqDetector:
         mag_spectrum_db = 20 * numpy.log10(mag_spectrum)
 
         max_mag_index = mag_spectrum_db.argmax()
-        if (mag_spectrum_db[max_mag_index] < MAG_THRESH):
+        if (mag_spectrum_db[max_mag_index] < MAGTHRESH) or (max_mag_index * self.FRES < FREQTHRESH):
             return None
 
-        # check half argmax for f0
+        # some strings have stronger 1st harmonic freq component
+        # search around half argmax for local maximum
         half_index = max_mag_index // 2
-        if mag_spectrum_db[mag_spectrum_db[:half_index + self.BINSEARCHBUFFER].argmax()] > 24:
-            freq = mag_spectrum_db[:half_index + self.BINSEARCHBUFFER].argmax() * self.FRES
+        search_index = mag_spectrum_db[half_index - SEARCHRANGE:half_index + SEARCHRANGE].argmax()
+        half_max_candidate = half_index - SEARCHRANGE + search_index
 
-            # remove false f0 reports due to excessive noise
-            if freq < (max_mag_index * self.FRES / 2) - self.HZSEARCHBUFFER:
-                freq = max_mag_index * self.FRES
+        if (mag_spectrum_db[half_max_candidate] > MAGTHRESH) and (half_max_candidate * self.FRES > FREQTHRESH):
+            freq = half_max_candidate * self.FRES
         else:
             freq = max_mag_index * self.FRES
 
