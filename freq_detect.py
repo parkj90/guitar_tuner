@@ -45,7 +45,6 @@ class FreqDetector:
             self.fftbuffer = numpy.append(self.fftbuffer, indata)[frames:]
             self.framecount += frames
 
-    # FIX ME!! change to make function not need to access external variables (i/o... return something)
     def find_note(self, fftbuffer, window):
         x = fftbuffer * window
         X = numpy.fft.fft(x)
