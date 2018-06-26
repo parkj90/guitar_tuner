@@ -1,5 +1,4 @@
 import wx
-import queue
 
 
 class TunerGUI:
@@ -9,17 +8,6 @@ class TunerGUI:
 
     def run(self):
         self.app.MainLoop()
-
-    # target for thread
-    def queue_check(self):
-        while True:
-            try:
-                self.frame.i = self.queue.get(False)
-            except queue.Empty:
-                pass
-
-    def guess_note(self, i):
-        pass
 
 
 class TunerFrame(wx.Frame):
