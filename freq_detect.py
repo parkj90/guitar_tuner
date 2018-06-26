@@ -6,34 +6,35 @@ import sounddevice
 
 SAMPLERATE = 44100
 FFTSIZE = 32768
-MAG_THRESH = 70
+MAG_THRESH = 26
+EPS = numpy.finfo(float).eps
 
 
 class FreqDetector:
-    # frequency resolution and overlap size
-    fres = SAMPLERATE / FFTSIZE
-    overlap = int(SAMPLERATE / 10)
+    # frequency resolution and OVERLAP size
+    FRES = SAMPLERATE / FFTSIZE
+    OVERLAP = int(SAMPLERATE / 10)
 
-    def __init__(self, q):
+    def __init__(self, queue):
         self.fftbuffer = numpy.zeros(FFTSIZE)
         self.samplerate = SAMPLERATE
         self.framecount = 0
         self.window = scipy.signal.get_window('blackman', FFTSIZE)
         self.screencap = True
-        self.q = q
+        self.queue = queue
 
     def add_samples(self, indata, frames):
         # stream yields enough frames for one or more fft calculations
-        if frames > self.overlap:
-            for i in range(int(frames / self.overlap)):
-                self.fftbuffer = numpy.append(self.fftbuffer, indata[:self.overlap])[self.overlap:]
-                indata = indata[self.overlap:]
+        if frames > self.OVERLAP:
+            for i in range(int(frames / self.OVERLAP)):
+                self.fftbuffer = numpy.append(self.fftbuffer, indata[:self.OVERLAP])[self.OVERLAP:]
+                indata = indata[self.OVERLAP:]
                 self.find_note()
-        frames = frames % self.overlap
+        frames = frames % self.OVERLAP
 
         # insufficient frames without leftover from last calculation
-        if self.framecount + frames >= self.overlap:
-            cutoff_index = self.overlap - self.framecount
+        if self.framecount + frames >= self.OVERLAP:
+            cutoff_index = self.OVERLAP - self.framecount
             self.fftbuffer = numpy.append(self.fftbuffer, indata[:cutoff_index])[cutoff_index:]
             temp = indata[cutoff_index:]
             self.find_note()
@@ -49,21 +50,31 @@ class FreqDetector:
         x = self.fftbuffer * self.window
         X = numpy.fft.fft(x)
         mag_spectrum = abs(X)[:int(len(X) / 2)]
-        freq = mag_spectrum.argmax() * self.fres
+        mag_spectrum[mag_spectrum < EPS] = EPS
+        mag_spectrumDB = 20 * numpy.log10(mag_spectrum)
 
-        # FIX ME!!! use log dB scale for cutoff (better yet, look at a graph of the log dB scale)
-        # also, in final version, pass queue to the instance
-        if (mag_spectrum[mag_spectrum.argmax()] < MAG_THRESH):
-            # print('N/A')
-            self.q.put('N/A')
+        if (mag_spectrumDB[mag_spectrumDB.argmax()] < MAG_THRESH):
+            self.queue.put(None)
         else:
-            # print(mag_spectrum.argmax(), freq)
-            self.q.put((mag_spectrum.argmax(), freq))
-        if 100 < freq < 120 and self.screencap:
-            pylab.plot(mag_spectrum)
-            pylab.axis([0, 300, 0, 100])
-            pylab.savefig('f0.png')
-            self.screencap = False
+            # check half argmax for f0
+            half_index = int(mag_spectrumDB.argmax() / 2)
+            if mag_spectrumDB[mag_spectrumDB[:half_index + 20].argmax()] > 24:
+                freq = mag_spectrumDB[:half_index + 20].argmax() * self.FRES
+            else:
+                freq = mag_spectrumDB.argmax() * self.FRES
+            # remove false f0 reports due to loud noise
+            if freq < (mag_spectrumDB.argmax() * self.FRES / 2) - 20:
+                freq = mag_spectrumDB.argmax() * self.FRES
+
+            self.queue.put(freq)
+            # debug tool
+            '''
+            if 280 < freq < 300 and self.screencap:
+                pylab.plot(mag_spectrumDB)
+                pylab.axis([0, 300, 0, 100])
+                pylab.savefig('f0.png')
+                self.screencap = False
+            '''
 
     def callback(self, indata, frames, time, status):
         if status:
@@ -71,14 +82,6 @@ class FreqDetector:
         if indata.any():
             self.add_samples(indata, frames)
 
-    def init_stream(self):
-        with sounddevice.InputStream(channels=1, dtype='float32', callback=self.callback):
-            input()
-            # FIX ME!!! this is just a debugging tool
-            self.q.put('end_stream')
-
-
-if __name__ == '__main__':
-    sounddevice.default.samplerate = SAMPLERATE
-    fd = FreqDetector()
-    fd.init_stream()
+    def run(self):
+        self.stream = sounddevice.InputStream(channels=1, dtype='float32', callback=self.callback)
+        self.stream.start()

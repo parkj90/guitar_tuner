@@ -1,19 +1,16 @@
 import freq_detect
 import queue
-import threading
 import tuner
 
 
 def main():
     q = queue.Queue()
-    fd = freq_detect.FreqDetector(q)
 
-    freq_thread = threading.Thread(target=fd.init_stream)
-    debug_thread = threading.Thread(target=tuner.check_queue, args=(q,))
-    freq_thread.start()
-    debug_thread.start()
+    fd = freq_detect.FreqDetector(q)
+    fd.run()
 
     guitar_tuner = tuner.TunerGUI(q)
+    guitar_tuner.run()
 
 
 if __name__ == '__main__':
