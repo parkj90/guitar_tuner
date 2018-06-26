@@ -1,5 +1,5 @@
 import numpy
-import pylab
+# import pylab
 import scipy.signal
 import sounddevice
 
@@ -29,7 +29,7 @@ class FreqDetector:
             for i in range(int(frames / self.OVERLAP)):
                 self.fftbuffer = numpy.append(self.fftbuffer, indata[:self.OVERLAP])[self.OVERLAP:]
                 indata = indata[self.OVERLAP:]
-                self.find_note()
+                self.queue.put(self.find_note(self.fftbuffer, self.window))
         frames = frames % self.OVERLAP
 
         # insufficient frames without leftover from last calculation
@@ -37,7 +37,7 @@ class FreqDetector:
             cutoff_index = self.OVERLAP - self.framecount
             self.fftbuffer = numpy.append(self.fftbuffer, indata[:cutoff_index])[cutoff_index:]
             temp = indata[cutoff_index:]
-            self.find_note()
+            self.queue.put(self.find_note(self.fftbuffer, self.window))
             self.fftbuffer = numpy.append(self.fftbuffer, temp)[len(temp):]
             self.framecount = len(temp)
         # not enough frames even with leftover
@@ -46,15 +46,15 @@ class FreqDetector:
             self.framecount += frames
 
     # FIX ME!! change to make function not need to access external variables (i/o... return something)
-    def find_note(self):
-        x = self.fftbuffer * self.window
+    def find_note(self, fftbuffer, window):
+        x = fftbuffer * window
         X = numpy.fft.fft(x)
         mag_spectrum = abs(X)[:int(len(X) / 2)]
         mag_spectrum[mag_spectrum < EPS] = EPS
         mag_spectrumDB = 20 * numpy.log10(mag_spectrum)
 
         if (mag_spectrumDB[mag_spectrumDB.argmax()] < MAG_THRESH):
-            self.queue.put(None)
+            return None
         else:
             # check half argmax for f0
             half_index = int(mag_spectrumDB.argmax() / 2)
@@ -62,11 +62,12 @@ class FreqDetector:
                 freq = mag_spectrumDB[:half_index + 20].argmax() * self.FRES
             else:
                 freq = mag_spectrumDB.argmax() * self.FRES
-            # remove false f0 reports due to loud noise
+
+            # remove false f0 reports due to excessive noise
             if freq < (mag_spectrumDB.argmax() * self.FRES / 2) - 20:
                 freq = mag_spectrumDB.argmax() * self.FRES
 
-            self.queue.put(freq)
+            return freq
             # debug tool
             '''
             if 280 < freq < 300 and self.screencap:
