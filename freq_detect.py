@@ -14,6 +14,8 @@ class FreqDetector:
     # frequency resolution and OVERLAP size
     FRES = SAMPLERATE / FFTSIZE
     OVERLAP = SAMPLERATE // 10
+    BINSEARCHBUFFER = 20
+    HZSEARCHBUFFER = 20
 
     def __init__(self, queue):
         self.inbuffer = numpy.array([])
@@ -21,7 +23,7 @@ class FreqDetector:
         self.samplerate = SAMPLERATE
         self.samplecount = 0
         self.window = scipy.signal.get_window('blackman', FFTSIZE)
-        self.screencap = True
+        # self.screencap = True
         self.queue = queue
 
     def add_samples(self, indata, num_samples):
@@ -31,7 +33,6 @@ class FreqDetector:
             self.queue.put(self.find_note(self.fftbuffer, self.window))
             self.inbuffer = self.inbuffer[self.OVERLAP:]
 
-    # FIX ME: might be using argmax() too many times; check to see if that can be reduced
     def find_note(self, fftbuffer, window):
         x = fftbuffer * window
         X = numpy.fft.fft(x)
@@ -40,19 +41,20 @@ class FreqDetector:
         mag_spectrum[mag_spectrum < EPS] = EPS
         mag_spectrum_db = 20 * numpy.log10(mag_spectrum)
 
-        if (mag_spectrum_db[mag_spectrum_db.argmax()] < MAG_THRESH):
+        max_mag_index = mag_spectrum_db.argmax()
+        if (mag_spectrum_db[max_mag_index] < MAG_THRESH):
             return None
 
         # check half argmax for f0
-        half_index = mag_spectrum_db.argmax() // 2
-        if mag_spectrum_db[mag_spectrum_db[:half_index + 20].argmax()] > 24:
-            freq = mag_spectrum_db[:half_index + 20].argmax() * self.FRES
+        half_index = max_mag_index // 2
+        if mag_spectrum_db[mag_spectrum_db[:half_index + self.BINSEARCHBUFFER].argmax()] > 24:
+            freq = mag_spectrum_db[:half_index + self.BINSEARCHBUFFER].argmax() * self.FRES
 
             # remove false f0 reports due to excessive noise
-            if freq < (mag_spectrum_db.argmax() * self.FRES / 2) - 20:
-                freq = mag_spectrum_db.argmax() * self.FRES
+            if freq < (max_mag_index * self.FRES / 2) - self.HZSEARCHBUFFER:
+                freq = max_mag_index * self.FRES
         else:
-            freq = mag_spectrum_db.argmax() * self.FRES
+            freq = max_mag_index * self.FRES
 
         return freq
 
