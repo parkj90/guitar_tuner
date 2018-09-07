@@ -16,21 +16,18 @@ class FreqDetector:
     # frequency resolution and OVERLAP size
     FRES = SAMPLERATE / FFTSIZE
     OVERLAP = SAMPLERATE // 10
-    LOCALMAXTHRESH = 24  # units: dB
 
     def __init__(self, queue):
         self.inbuffer = numpy.array([])
         self.fftbuffer = numpy.zeros(FFTSIZE)
-        self.samplerate = SAMPLERATE
-        self.samplecount = 0
         self.window = scipy.signal.get_window('blackman', FFTSIZE)
-        # self.screencap = True
         self.queue = queue
+        # self.screencap = True
 
     def add_samples(self, indata, num_samples):
         self.inbuffer = numpy.append(self.inbuffer, indata)
         while len(self.inbuffer) > self.OVERLAP:
-            self.fftbuffer = numpy.append(self.fftbuffer, self.inbuffer[:self.OVERLAP])[self.OVERLAP:]
+            self.fftbuffer = numpy.append(self.fftbuffer[self.OVERLAP:], self.inbuffer[:self.OVERLAP])
             self.queue.put(self.find_note(self.fftbuffer, self.window))
             self.inbuffer = self.inbuffer[self.OVERLAP:]
 
@@ -71,7 +68,7 @@ class FreqDetector:
     def callback(self, indata, num_samples, time, status):
         if status:
             print(status)
-        if indata.any():
+        if num_samples:
             self.add_samples(indata, num_samples)
 
     def run(self):
